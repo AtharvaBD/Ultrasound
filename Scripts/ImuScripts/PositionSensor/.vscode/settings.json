@@ -34,5 +34,6 @@
     "--query-driver=**",
     "--compile-commands-dir=c:\\Users\\birat\\Desktop\\Ultrasound\\Scripts\\ImuScripts\\PositionSensor\\build"
   ],
-  "idf.flashType": "UART"
+  "idf.flashType": "UART",
+  "python-envs.defaultEnvManager": "ms-python.python:system"
 }

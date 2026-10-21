@@ -10,6 +10,8 @@
 #include "imu.h"
 #include "esp_timer.h"
 #include "mahony.h"
+#include "position.h"
+#include "normal.h"
 
 static const char *TAG = "MAIN";
 
@@ -53,7 +55,7 @@ extern "C" void app_main(void)
         ESP_LOGE(TAG, "IMU init failed: %s", esp_err_to_name(err));
         while (1) vTaskDelay(portMAX_DELAY);
     }
-
+    
     // ---- Mahony filter setup ----
     mahony_t filter;
     // Start with the big startup Kp so the estimate snaps to gravity quickly
@@ -68,6 +70,15 @@ extern "C" void app_main(void)
     // The filter wants rad/s, but our pipeline produces dps. Convert once here
     const float DEG2RAD = 0.01745329252f;
 
+    // Reference gravity direction. Default = +Z, which is what accel calibration
+    // leaves you with when the device sits flat. 'n' overwrites it.
+    float g_ref[3] = {0.0f, 0.0f, 1.0f};
+    float g_now[3] = {0.0f, 0.0f, 1.0f};   // latest gravity estimate, updated every loop
+
+    // ---- Position tracker ----
+    position_t pos;
+    position_init(&pos);
+
     // ---- Main loop ----
     while (1) {
         // On the ESP32 console, getchar() returns EOF right away if nothing was typed
@@ -80,6 +91,22 @@ extern "C" void app_main(void)
         if (ch == 'a' || ch == 'A') {
             esp_err_t cerr = cal_run_accel();
             if (cerr != ESP_OK) printf("Accel calibration did not complete: %s\n", esp_err_to_name(cerr));
+            continue;
+        }
+        if (ch == 'z' || ch == 'Z') {
+            // Make "here" the new origin
+            position_reset(&pos);
+            printf("Position reset\n");
+            continue;
+        }
+        if (ch == 'n' || ch == 'N') {
+            // Capture the current gravity direction as the reference "normal"
+            g_ref[0] = g_now[0]; g_ref[1] = g_now[1]; g_ref[2] = g_now[2];
+            printf("Normal captured: %.3f, %.3f, %.3f\n", g_ref[0], g_ref[1], g_ref[2]);
+            continue;
+        }
+        if (ch == 'm' || ch == 'M') {
+            printf("Angle from reference: %.2f deg\n", angle_between_deg(g_now, g_ref));
             continue;
         }
 
@@ -117,12 +144,23 @@ extern "C" void app_main(void)
                       cor.ax, cor.ay, cor.az,
                       dt);
 
-        // Print only every Nth update: slow float formatting would stretch the loop and distort dt
+        // Feed the position tracker: it needs the filter's quaternion plus calibrated accel (g) and gyro (dps)
+        float q[4];
+        mahony_get_quaternion(&filter, q);
+        gravity_from_quat(q, g_now);
+        position_update(&pos, q,
+                        cor.ax, cor.ay, cor.az,
+                        cor.gx, cor.gy, cor.gz,
+                        dt);
+
         if (++print_count >= MAHONY_PRINT_EVERY) {
             print_count = 0;
             float roll, pitch, yaw;
             mahony_get_euler_deg(&filter, &roll, &pitch, &yaw);
-            printf("%.1f,%.1f,%.1f\n", roll, pitch, yaw);
+            // roll,pitch,yaw (deg), then x,y,z position (m), then 1 if held still
+            printf("%.1f,%.1f,%.1f,%.3f,%.3f,%.3f,%d\n",
+                   roll, pitch, yaw,
+                   pos.p[0], pos.p[1], pos.p[2], pos.stationary ? 1 : 0);
         }
 
         vTaskDelay(pdMS_TO_TICKS(10));

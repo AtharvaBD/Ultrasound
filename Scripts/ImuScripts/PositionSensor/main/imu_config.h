@@ -71,3 +71,14 @@
 #define MAHONY_MAX_DT_S        0.1f
 // Print one line every N updates, so slow float formatting doesn't distort dt
 #define MAHONY_PRINT_EVERY     10
+
+/* Tuning values for the position module.*/
+// Standard gravity, to convert g into m/s^2
+#define POS_GRAVITY_MS2        9.80665f
+// "Stationary" means ALL of these hold for POS_STILL_SAMPLES samples in a row:
+// accel magnitude within this band around 1 g (in g)
+#define POS_STILL_ACCEL_BAND_G 0.03f
+// gyro magnitude below this (in dps)
+#define POS_STILL_GYRO_DPS     2.0f
+// consecutive quiet samples required (about 0.2 s at ~40 Hz)
+#define POS_STILL_SAMPLES      8
